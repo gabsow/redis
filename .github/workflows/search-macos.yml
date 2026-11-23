@@ -28,6 +28,7 @@ jobs:
       - name: Bootstrap Search and inspect compiler in calling shell
         run: |
           gmake bootstrap redisearch
+          (cd modules/redisearch/src && REDISEARCH_GENERATE_HEADERS=0 gmake verify-deps) || echo "::notice::Search dependency check failed in bootstrap shell"
           command -v clang
           clang --version
       - name: Build Search with the bootstrapped environment
