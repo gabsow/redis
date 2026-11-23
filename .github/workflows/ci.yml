@@ -1,5 +1,6 @@
 name: Search 8.12.1 macOS source build
 on:
+  workflow_dispatch:
   push:
     branches: [test/search-8121-macos-20261123]
 permissions:
