@@ -1,0 +1,53 @@
+name: Search 8.12.1 macOS source build
+on:
+  push:
+    branches: [test/search-8121-macos-20261123]
+permissions:
+  contents: read
+jobs:
+  search:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: TalBarYakar/redis
+          ref: a48ee08747084bcd9a81ef4babd22478a86a83e9
+          persist-credentials: false
+      - name: Select Search 8.12.1
+        run: |
+          sed -i '' '/^  - name: redisearch$/,/^    target_module:/s/ref: v8.9.82/ref: v8.12.1/' modules/modules.yaml
+          git diff -- modules/modules.yaml
+          command -v gmake || brew install make
+          gmake modules-update redisearch MODULES_UPDATE_SHALLOW=1
+          test "$(git -C modules/redisearch/src describe --tags --exact-match)" = v8.12.1
+      - name: Bootstrap Search and inspect compiler in calling shell
+        run: |
+          gmake bootstrap redisearch
+          command -v clang
+          clang --version
+      - name: Build Search with the bootstrapped environment
+        run: |
+          command -v clang
+          clang --version
+          gmake -j4 build redisearch
+          test -s modules/redisearch/redisearch.so
+      - name: Load Search and create an index
+        run: |
+          socket="$RUNNER_TEMP/redis.sock"
+          src/redis-server --port 0 --unixsocket "$socket" --save '' --appendonly no --loadmodule "$PWD/modules/redisearch/redisearch.so" > "$RUNNER_TEMP/server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; cat "$RUNNER_TEMP/server.log"' EXIT
+          for i in {1..60}; do
+            if src/redis-cli -s "$socket" ping 2>/dev/null | grep -qx PONG; then break; fi
+            kill -0 "$server_pid"
+            sleep 1
+          done
+          src/redis-cli -s "$socket" --raw module list
+          reply=$(src/redis-cli -s "$socket" --raw FT.CREATE testidx ON HASH SCHEMA title TEXT)
+          echo "$reply"
+          test "$reply" = OK
